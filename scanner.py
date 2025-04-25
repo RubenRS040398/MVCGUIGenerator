@@ -3,13 +3,14 @@ import sys
 import pandas as pd
 
 data = []
-count = 0
+float_min = 2.225074e-292
+float_max = 1.797693e+292
 
 def scan(source_code):
     tree = ast.parse(source_code)
     #print(ast.dump(tree, indent=4))
-    walk(tree, str(tree), False)
-    labels = ['Name', 'Type', 'From', 'To', 'IsAnArgument', 'IsAMethod', 'IsAReturn']
+    _ = walk(tree, '', False, '')
+    labels = ['Name', 'Type', 'From', 'To', 'IsAnArgument', 'IsAMethod', 'IsAReturnValue']
     for i in range(1, 11):
         labels.append('ArgumentName' + str(i))
         labels.append('ArgumentType' + str(i))
@@ -17,19 +18,37 @@ def scan(source_code):
         labels.append('ReturnValueName' + str(i))
         labels.append('ReturnValueType' + str(i))
     labels.append('DefaultValue')
+    labels.append('BelongsTo')
+    labels.append('UseSmartView')
     test = pd.DataFrame(data, columns=labels)
     return test
 
-def walk(node, name, is_a_class):
-    if "FunctionDef" in str(node) and is_a_class and node.__dict__['name'] != '__init__':
-        data.append(get_function_sample(node))
+def walk(node, name, is_a_class, smart_view_attr_name):
+    smart_view_attr = smart_view_attr_name
+    if "FunctionDef" in str(node) and is_a_class:
+        if node.__dict__['name'] != '__init__':
+            data.append(get_function_sample(node, name, smart_view_attr_name))
+        else:
+            i = 0
+            found = False
+            while i < len(node.__dict__['args'].__dict__['args']) and not found:
+                if node.__dict__['args'].__dict__['args'][i].__dict__['annotation']:
+                    if node.__dict__['args'].__dict__['args'][i].__dict__['annotation'].__dict__['id'] == 'SmartView':
+                        smart_view_attr = node.__dict__['args'].__dict__['args'][i].__dict__['arg']
+                        found = True
+                    else:
+                        i += 1
+                else:
+                    i += 1
     else:
         children = list(ast.iter_child_nodes(node))
         for child in children:
+            #print(smart_view_attr)
             if "ClassDef" in str(child) and is_not_a_model(child):
-                walk(child, str(child), True)
+                smart_view_attr = walk(child, child.__dict__['name'], True, '')
             else:
-                walk(child, str(child), is_a_class)
+                smart_view_attr = walk(child, name, is_a_class, smart_view_attr)
+    return smart_view_attr
 
 def is_not_a_model(node):
     i = 0
@@ -53,7 +72,7 @@ def is_not_a_model(node):
             i += 1
     return found
 
-def get_function_sample(node):
+def get_function_sample(node, class_name, smart_view_attr_name):
     function_sample = [node.__dict__['name']]
     if node.__dict__['returns']:
         if 'slice' in node.__dict__['returns'].__dict__:
@@ -62,8 +81,8 @@ def get_function_sample(node):
             function_sample.append(node.__dict__['returns'].__dict__['id'])
     else:
         function_sample.append(str(node.__dict__['returns']))
-    function_sample.append(sys.float_info.min)
-    function_sample.append(sys.float_info.max)
+    function_sample.append(float_min)
+    function_sample.append(float_max)
     function_sample.append(False)
     function_sample.append(True)
     function_sample.append(False)
@@ -86,12 +105,11 @@ def get_function_sample(node):
             function_sample.append(argument.__dict__['arg'])
             if argument.__dict__['annotation']:
                 function_sample.append(argument.__dict__['annotation'].__dict__['id'])
-                data.append(get_argument_sample(argument, None, asserts))
+                data.append(get_argument_sample(argument, None, asserts, node.__dict__['name']))
             else:
                 function_sample.append(type(defaults[default_index]).__name__)
-                data.append(get_argument_sample(argument, defaults[default_index], asserts))
+                data.append(get_argument_sample(argument, defaults[default_index], asserts, node.__dict__['name']))
                 default_index += 1
-            print
     if node.__dict__['returns']:
         if 'slice' in node.__dict__['returns'].__dict__:
             j = 0
@@ -100,7 +118,7 @@ def get_function_sample(node):
                     function_sample.append(str(return_value.__dict__['id']))
                     function_sample.append(node.__dict__['returns'].__dict__['slice'].__dict__['elts'][j].__dict__['id'])
                     data.append(get_return_sample(str(return_value.__dict__['id']),
-                                                  node.__dict__['returns'].__dict__['slice'].__dict__['elts'][j].__dict__['id']))
+                                                  node.__dict__['returns'].__dict__['slice'].__dict__['elts'][j].__dict__['id'], node.__dict__['name']))
                 elif "Call" in str(return_value):
                     aux_name = return_value.__dict__['func'].__dict__['value'].__dict__['value'].__dict__['id']
                     aux_name += '.' + return_value.__dict__['func'].__dict__['value'].__dict__['attr']
@@ -108,12 +126,12 @@ def get_function_sample(node):
                     function_sample.append(aux_name)
                     function_sample.append(node.__dict__['returns'].__dict__['slice'].__dict__['elts'][j].__dict__['id'])
                     data.append(get_return_sample(aux_name,
-                                                  node.__dict__['returns'].__dict__['slice'].__dict__['elts'][j].__dict__['id']))
+                                                  node.__dict__['returns'].__dict__['slice'].__dict__['elts'][j].__dict__['id'], node.__dict__['name']))
                 elif "Constant" in str(return_value):
                     function_sample.append("unnamed_" + str(return_value.__dict__['value']))
                     function_sample.append(type(return_value.__dict__['value']).__name__)
                     data.append(get_return_sample("unnamed_" + str(return_value.__dict__['value']),
-                                                  type(return_value.__dict__['value']).__name__))
+                                                  type(return_value.__dict__['value']).__name__, node.__dict__['name']))
                 j += 1
             for i in range(j, 10):
                 function_sample.append('')
@@ -123,18 +141,17 @@ def get_function_sample(node):
             if "Name" in str(aux_return.__dict__['value']):
                 function_sample.append(str(aux_return.__dict__['value'].__dict__['id']))
                 data.append(get_return_sample(str(aux_return.__dict__['value'].__dict__['id']),
-                                              node.__dict__['returns'].__dict__['id']))
+                                              node.__dict__['returns'].__dict__['id'], node.__dict__['name']))
             elif "Call" in str(aux_return.__dict__['value']):
-                print()
                 aux_name = aux_return.__dict__['value'].__dict__['func'].__dict__['value'].__dict__['value'].__dict__['id']
                 aux_name += '.' + aux_return.__dict__['value'].__dict__['func'].__dict__['value'].__dict__['attr']
                 aux_name += '.' + aux_return.__dict__['value'].__dict__['func'].__dict__['attr']
                 function_sample.append(aux_name)
-                data.append(get_return_sample(aux_name, node.__dict__['returns'].__dict__['id']))
+                data.append(get_return_sample(aux_name, node.__dict__['returns'].__dict__['id'], node.__dict__['name']))
             elif "Constant" in str(aux_return.__dict__['value']):
                 function_sample.append("unnamed_" + str(aux_return.__dict__['value'].__dict__['value']))
                 data.append(get_return_sample("unnamed_" + str(aux_return.__dict__['value'].__dict__['value']),
-                                              node.__dict__['returns'].__dict__['id']))
+                                              node.__dict__['returns'].__dict__['id'], node.__dict__['name']))
             function_sample.append(node.__dict__['returns'].__dict__['id'])
             for i in range(1, 10):
                 function_sample.append('')
@@ -144,9 +161,11 @@ def get_function_sample(node):
             function_sample.append('')
             function_sample.append('None')
     function_sample.append('')
+    function_sample.append(class_name)
+    function_sample.append(use_smart_view(node, smart_view_attr_name))
     return function_sample
 
-def get_argument_sample(node, default_value, asserts):
+def get_argument_sample(node, default_value, asserts, function_name):
     argument_sample = [node.__dict__['arg']]
     if default_value:
         argument_sample.append(type(default_value).__name__)
@@ -163,35 +182,35 @@ def get_argument_sample(node, default_value, asserts):
         else:
             i += 1
     if _assert is None:
-        argument_sample.append(sys.float_info.min)
-        argument_sample.append(sys.float_info.max)
+        argument_sample.append(float_min)
+        argument_sample.append(float_max)
     elif len(_assert) == 3:
         if _assert.index(node.__dict__['arg']) == 0:
             if "Gt " in _assert[1]:
                 argument_sample.append(float(_assert[2]) + min_value(type(_assert[2])))
-                argument_sample.append(sys.float_info.max)
+                argument_sample.append(float_max)
             elif "GtE " in _assert[1]:
                 argument_sample.append(float(_assert[2]))
-                argument_sample.append(sys.float_info.max)
+                argument_sample.append(float_max)
             elif "Lt " in _assert[1]:
-                argument_sample.append(sys.float_info.min)
+                argument_sample.append(float_min)
                 argument_sample.append(float(_assert[2]) - min_value(type(_assert[2])))
             elif "LtE " in _assert[1]:
-                argument_sample.append(sys.float_info.min)
+                argument_sample.append(float_min)
                 argument_sample.append(float(_assert[2]))
         else:
             if "Gt " in _assert[1]:
-                argument_sample.append(sys.float_info.min)
+                argument_sample.append(float_min)
                 argument_sample.append(float(_assert[0]) - min_value(type(_assert[0])))
             elif "GtE " in _assert[1]:
-                argument_sample.append(sys.float_info.min)
+                argument_sample.append(float_min)
                 argument_sample.append(float(_assert[0]))
             elif "Lt " in _assert[1]:
                 argument_sample.append(float(_assert[0]) + min_value(type(_assert[0])))
-                argument_sample.append(sys.float_info.max)
+                argument_sample.append(float_max)
             elif "LtE " in _assert[1]:
                 argument_sample.append(float(_assert[0]))
-                argument_sample.append(sys.float_info.max)
+                argument_sample.append(float_max)
     elif len(_assert) == 5:
         if "Gt " in _assert[1] and "Gt " in _assert[2]:
             argument_sample.append(float(_assert[-1]) + min_value(type(_assert[-1])))
@@ -227,14 +246,18 @@ def get_argument_sample(node, default_value, asserts):
         argument_sample.append('')
     else:
         argument_sample.append(default_value)
+    argument_sample.append(function_name)
+    argument_sample.append(False)
     return argument_sample
 
-def get_return_sample(name, type):
-    return_sample = [name, type, sys.float_info.min, sys.float_info.max, False, False, True]
+def get_return_sample(name, _type, function_name):
+    return_sample = [name, _type, float_min, float_max, False, False, True]
     for i in range(20):
         return_sample.append('')
         return_sample.append('None')
     return_sample.append('')
+    return_sample.append(function_name)
+    return_sample.append(False)
     return return_sample
 
 def look_for_asserts(node):
@@ -261,3 +284,12 @@ def min_value(_type):
         return 1.0
     elif "float" in str(_type):
         return sys.float_info.epsilon
+
+def use_smart_view(node, smart_view_attr_name):
+    found = False
+    for line in node.__dict__['body']:
+        if line.__dict__['value']:
+            if "Call" in str(line.__dict__['value']):
+                if line.__dict__['value'].__dict__['func'].__dict__['value'].__dict__['attr'] == smart_view_attr_name:
+                    found = True
+    return found
