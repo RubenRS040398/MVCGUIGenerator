@@ -16,14 +16,14 @@ def merge(folder, file_names, data=False):
     for file_name in file_names:
         file_path = os.path.join(folder, file_name)
         if not data:
-            if os.path.isfile(file_path) and file_name != "view.py":
+            if os.path.isfile(file_path) and file_name not in ['main.py', 'view.py']:
                 with open(file_path, "r", encoding="utf-8") as file:
                     merged += file.read()
         else:
             if os.path.isfile(file_path):
                 print(file_path)
                 dataframe = pd.read_excel(file_path)
-                merged = pd.concat([dataframe])
+                merged = pd.concat([merged, dataframe], ignore_index=True)
     return merged
 
 def load_train_data():
