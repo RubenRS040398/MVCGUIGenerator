@@ -16,9 +16,9 @@ class Estudiant:
         self.nom = nom
 
 class ControladorEstudiant:
-    def __init__(self, model: Estudiant):#, vista: SmartView):
+    def __init__(self, model: Estudiant, vista: SmartView):
         self.model = model
-        #self.vista = vista
+        self.vista = vista
 
     def modificar_nom_estudiant(self, nom: str):
         self.model.set_nom(nom)
@@ -32,11 +32,5 @@ class ControladorEstudiant:
     def retornar_niu_estudiant(self) -> str:
         return self.model.get_niu()
 
-    #def mostrar_informacio_estudiant(self):
-        #print(f"Nom: {self.model.get_nom()}, NIU: {self.model.get_niu()}")
-
-    #def dades_personals(self, a: int, b: int, c: int, d: int, e: int, f: int) -> tuple[int, int, int, int, int, int]:
-        #return a, b, c, d, e, f
-
-    #def actualitzar_vista(self):
-        #self.vista.imprimir_detalls_estudiant(self.model.get_nom(), self.model.get_niu())
+    def actualitzar_vista(self):
+        self.vista.imprimir_detalls_estudiant(self.model.get_nom(), self.model.get_niu())
