@@ -19,7 +19,7 @@ This tool generates the GUI design of a program according to the Model and Contr
 
 ## Screenshots
 
-TBD.
+![Main window](./screenshots/MVCGUIGeneratorMain.png)
 
 ## Used libraries
 
