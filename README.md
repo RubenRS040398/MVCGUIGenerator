@@ -92,7 +92,7 @@ The tool is divided into six modules:
 
 ## License
 
-This project is under the MIT License.
+The content of this repository is protected by copyright. Check the license for further details.
 
 ## Others
 
